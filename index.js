@@ -10,6 +10,9 @@ const PORT = 3000;
 // Enable CORS
 app.use(cors());
 
+// server public folder
+app.use(express.static('public'));
+
 app.use((req, res, next) => {
 	res.header('Access-Control-Allow-Origin', '*');
 	res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
