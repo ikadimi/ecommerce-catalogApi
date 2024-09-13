@@ -8,16 +8,18 @@ const app = express();
 const PORT = 3000;
 
 // Enable CORS
-app.use(cors());
-
-// server public folder
-app.use(express.static('public'));
-
 app.use((req, res, next) => {
 	res.header('Access-Control-Allow-Origin', '*');
 	res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
 	next();
   });
+app.use(cors({
+  credentials: true,
+  origin: 'http://localhost:4200'
+}));
+
+// server public folder
+app.use(express.static('public'));
 
 // MongoDB connection details
 const url = 'mongodb://localhost:27017';
@@ -64,9 +66,11 @@ async function startApp() {
     await createAndSeedProductsCollection(db);
 
     // Define routes
-    app.get('/products', async (req, res) => {
+    app.get('/products', async (_, res) => {
       try {
+        console.log('Fetching products...');
         const products = await db.collection('products').find().toArray();
+        console.log('Products fetched:', products);
         res.send(products);
       } catch (err) {
         console.error('Error fetching products:', err);
