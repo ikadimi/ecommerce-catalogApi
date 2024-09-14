@@ -39,7 +39,7 @@ async function createAndSeedProductsCollection(db) {
       console.log('Products collection created.');
 
       // Read and parse the JSON file
-      const productsJson = fs.readFileSync('source/products.json');
+      const productsJson = fs.readFileSync('source/products_updated.json');
       const productsData = JSON.parse(productsJson);
 
       // Seed the collection with products data
