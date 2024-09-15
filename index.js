@@ -66,17 +66,46 @@ async function startApp() {
     await createAndSeedProductsCollection(db);
 
     // Define routes
-    app.get('/products', async (_, res) => {
+    app.get('/products', async (req, res) => {
       try {
         console.log('Fetching products...');
-        const products = await db.collection('products').find().toArray();
+    
+        // Extract query parameters
+        const { searchTerm, category, minPrice, maxPrice } = req.query;
+    
+        // Build the MongoDB query object
+        let query = {};
+    
+        // Add search term filter if provided (search in product name or description)
+        if (searchTerm) {
+          query.$or = [
+            { name: { $regex: searchTerm, $options: 'i' } }, // case-insensitive search
+            { description: { $regex: searchTerm, $options: 'i' } }
+          ];
+        }
+    
+        // Add category filter if provided
+        if (category) {
+          query.category = category;
+        }
+    
+        // Add price range filter if provided
+        if (minPrice || maxPrice) {
+          query.price = {};
+          if (minPrice) query.price.$gte = parseFloat(minPrice); // greater than or equal to
+          if (maxPrice) query.price.$lte = parseFloat(maxPrice); // less than or equal to
+        }
+    
+        // Fetch filtered products from MongoDB
+        const products = await db.collection('products').find(query).toArray();
+    
         console.log('Products fetched:', products);
         res.send(products);
       } catch (err) {
         console.error('Error fetching products:', err);
         res.status(500).send({ message: 'Error fetching products' });
       }
-    });
+    });    
 
     app.get('/products/:id', async (req, res) => {
       const id = req.params.id;
