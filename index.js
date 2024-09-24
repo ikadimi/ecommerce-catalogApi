@@ -1,12 +1,14 @@
+require('dotenv').config();
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const Product = require('./models/product.model');
+const redisClient = require('./redisClient');
 
 // Create an Express app
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT;
 
 // Enable CORS
 app.use((req, res, next) => {
@@ -16,15 +18,15 @@ app.use((req, res, next) => {
 });
 app.use(cors({
   credentials: true,
-  origin: 'http://localhost:4200'
+  origin: process.env.CLIENT_URL
 }));
 
 // server public folder
 app.use(express.static('public'));
 
 // MongoDB connection details
-const url = 'mongodb://localhost:27017';
-const dbName = 'ecommerce';
+const url = process.env.DB_URL;
+const dbName = process.env.DB_NAME;
 mongoose.connect(`${url}/${dbName}`)
   .then(() => {
     console.log('Connected to MongoDB');
@@ -66,7 +68,9 @@ async function startApp() {
       console.log('Fetching products...');
 
       // Extract query parameters
-      const { searchTerm, category, minPrice, maxPrice } = req.query;
+      const { page = 1, searchTerm, category, brand, minPrice, maxPrice } = req.query;
+      const limit = 9;
+      const skip = (page - 1) * limit;
 
       // Build the Mongoose query object
       let query = {};
@@ -84,6 +88,11 @@ async function startApp() {
         query.category = category;
       }
 
+      // Add brand filter if provided
+      if (brand) {
+        query.brand = brand;
+      }
+
       // Add price range filter if provided
       if (minPrice || maxPrice) {
         query.price = {};
@@ -92,10 +101,16 @@ async function startApp() {
       }
 
       // Fetch filtered products from MongoDB using Mongoose
-      const products = await Product.find(query);
+      const products = await Product.find(query).skip(skip).limit(parseInt(limit));
+      const total = await Product.countDocuments(query);
 
       console.log('Products fetched:', products);
-      res.status(200).json(products);
+      res.status(200).json({
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        products,
+      });
     } catch (err) {
       console.error('Error fetching products:', err);
       res.status(500).send({ message: 'Error fetching products' });
@@ -104,12 +119,26 @@ async function startApp() {
 
   app.get('/products/:id', async (req, res) => {
     const id = req.params.id;
+    const cacheKey = `similar_products_${id}`;
+
     try {
       // new MongoClient.ObjectId(id)
+      const cachedData = await redisClient.get(cacheKey);
+      if (cachedData) {
+        console.log('i got cacheeeed')
+        return res.json(JSON.parse(cachedData)); // Return cached data
+      }
+
       const product = await Product.findOne({ _id: id });
+  
       if (!product) {
         res.status(404).send({ message: 'Product not found' });
       } else {
+
+        await redisClient.set(cacheKey, JSON.stringify(product), {
+          EX: 3600, // Set expiration time in seconds (1 hour)
+        });
+  
         res.send(product);
       }
     } catch (err) {
@@ -118,6 +147,37 @@ async function startApp() {
     }
   });
 
+
+  app.get('/filters', async (req, res) => {
+    try {
+      // Get unique categories
+      const categories = await Product.distinct('category');
+
+      // Get unique brands
+      const brands = await Product.distinct('brand');
+
+      // Get min and max price
+      const priceRange = await Product.aggregate([
+        {
+          $group: {
+            _id: null,
+            minPrice: { $min: '$price' },
+            maxPrice: { $max: '$price' }
+          }
+        }
+      ]);
+
+      // Return filter options
+      res.json({
+        categories: categories,
+        brands: brands,
+        minPrice: priceRange[0]?.minPrice || 0,
+        maxPrice: priceRange[0]?.maxPrice || 0
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to retrieve filters' });
+    }
+  });
   // Start the server
   app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
